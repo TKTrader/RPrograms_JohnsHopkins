@@ -1,0 +1,98 @@
+---
+title: "Motortrend MPG Analysis"
+author: "Thomson Kneeland"
+date: "May 19, 2016"
+output: pdf_document
+---
+
+---
+```{r global_options, include = FALSE}
+knitr::opts_chunk$set(fig.height=3,echo=TRUE, warning=FALSE, message=FALSE)
+```
+
+## Executive Summary
+
+This paper examines the mtcars dataset, exploring the relationship between mpg (miles per gallon) and other variables. Of particular interest is whether manual or automatic transmission offers a better mpg outcome, and if so, by how much. We examine the data using 1) a base linear model with transmission and mpg only 2) a "best fit" multiple regression model we find with the data, and then 3) compare the two and check for uncertainties.
+
+Although a simple analysis concludes that manual transmissions offer a mean increase of 7.2 mpg over automatic transmissions, a more complex model including weight, cylinder, and horsepower accounted for more mpg variability (83%), with a change in mpg for transmission type of only 1.8 mpg.
+```{r, echo=FALSE}
+data(mtcars)
+mtcars$cyl  <- factor(mtcars$cyl)  ## Convert to factors for analysis
+mtcars$engine <- factor(mtcars$vs,labels=c("V","S"))
+mtcars$gear <- factor(mtcars$gear)
+mtcars$carb <- factor(mtcars$carb)
+mtcars$am   <- factor(mtcars$am,labels = c("auto","man"))
+library(dplyr)
+library(car)
+mtcars <- select(mtcars,-(qsec:vs))  ## subtract unneeded columns
+```
+## Exploratory Analysis
+
+Since we are primarily interested in the relationship between transmission type and mpg, a t.test will ascertain if manual vs automatic significantly affects mpg.
+
+```{r,echo=TRUE}
+t.test(mpg ~ am, data = mtcars)$estimate; t.test(mpg ~ am, data = mtcars)$p.value
+```
+The t-test confirms that there is a difference in effects by transmission type, as shown by the marked difference in the mean mpg between automatic and manual transmissions (17.1 vs 24.4, a difference of 7.3 mpg). The low p-value of 0.001374 rejects the null hypothesis that transmission has no effect. 
+
+Let's visually examine mpg in relation to other potential regressors that may may also impact mpg.
+```{r, echo=FALSE,fig.width=10,fig.height=4,fig.align='center'}
+library(cowplot)
+a <- ggplot(mtcars,aes(x=am,y=mpg))+geom_boxplot(fill=c("light blue","green"))+geom_point()+
+      labs(title="Transmission Type", y= "mpg",x="")
+b <- ggplot(mtcars,aes(x=cyl,y=mpg))+geom_boxplot(fill=c("light blue","green","red"))+geom_point()+
+      labs(title="# of Cylinders",x="",y="")
+c <- ggplot(mtcars,aes(x=engine,y=mpg))+geom_boxplot(fill=c("light blue","green"))+geom_point()+
+      labs(title="Engine",x="",y="")
+d <- ggplot(mtcars,aes(x=gear,y=mpg))+geom_boxplot(fill=c("light blue","green","red"))+geom_point()+
+      labs(title="# Gears",x="",y="")
+e <- ggplot(mtcars,aes(x=carb,y=mpg))+geom_boxplot(fill=c("light blue","green","red","blue","yellow","orange"))+
+      geom_point()+labs(title="# Carburetors",x="",y="")
+f <- ggplot(mtcars,aes(x=disp,y=mpg))+geom_point()+labs(title="Displ(cu.in.)",x="",y="mpg")+
+      geom_smooth(method='lm')
+g <- ggplot(mtcars,aes(x=hp,y=mpg))+geom_point()+labs(title="Horsepower", x="",y="")+
+      geom_smooth(method='lm')
+h <- ggplot(mtcars,aes(x=drat,y=mpg))+geom_point()+labs(title="Rear Axle Ratio",x="",y="")+
+      geom_smooth(method='lm')
+i <- ggplot(mtcars,aes(x=wt,y=mpg)) +geom_point()+labs(title="Weight(Tons)",x="",y="")+
+      geom_smooth(method='lm')
+plot_grid(a,b,c,d,e,f,g,h,i,ncol=5)
+```
+We have a visual confirmation between the mpg results of "transmission type", but there appears to be correlations with other variables as well. A multiple regression model appears be better suited for the data.
+
+##Regression Models
+Our base linear regression model for comparison will use transmission type as a predictor of mpg.
+```{r, echo=TRUE}
+basemodel <- lm(mpg ~ factor(am),data=mtcars)
+summary(basemodel)$coef;summary(basemodel)$adj.r.squared
+```
+The small p-values are statistically significant, supporting the view that transmission type does affect mpg. However, the model yields an Adjusted R-squared value of 0.34, which we can interpret as meaning 34% of the variability in mpg is explained by the transmission type. This is far from optimal, so we will look for a multiple regression model with a better fit. The R step() function uses "AIC" values to compare and establish a "best fit"" model from all possible regressors. The resulting "best fit" model calculated by the step() function adds the regressors cylinder, horsepower, and weight to transmission type (see Appendix for model calculation code). 
+```{r, echo=TRUE}
+bestfitmodel <- lm(mpg ~ am + cyl +hp +wt,data=mtcars)
+summary(bestfitmodel)$coef; summary(bestfitmodel)$adj.r.squared; sqrt(vif(bestfitmodel))
+```
+This model yields an Adjusted R-Squared value of .84, accounting for 84% of the variability in mpg, a much better fit than our base model. The small p-values support our regressors as being statistically significant. We also find in this model that transmission type now only accounts for an increase of 1.8 mpg. A look at the Variance of Inflation shows that there is some collinearity between regressors.
+
+##Diagnostic Plots of Residuals
+Let's examine the residual data of this model with diagnostic plots to make sure there are no influential outliers and such.
+```{r, echo=FALSE,fig.width=10,fig.height=6,fig.align='center'}
+par(mfrow=c(2, 2))
+plot(bestfitmodel)
+```
+Residuals appear random with no pattern in the first chart. The QQplot in the upper right indicates the best fit model residuals are normally distributed; however, 3 outliers do have a high degree of leverage, which is concerning considering the small dataset of 32 observations. 
+An ANOVA test of the two models will verify that these models are in fact statistically different enough to merit using the more complex model.
+```{r, echo=TRUE}
+anova(basemodel, bestfitmodel)
+```
+The p value is very small, so we reject the null hypothesis that these two models yield similar results.  Accordingly, we should use the more complex model that accounts for a greater degree of variability of and correlation to the mpg data. 
+
+## Conclusion/Uncertainties
+We have examined mpg in relation to 1) a simple model of transmission type vs 2) a complex model including regressors transmission type, # of cylinders, horsepower, and weight.  After confirming that manual transmission does affect mpg by approximately 7.3 mpg, a basic visual examination of correlations seemed to show that other regressors are also in play. An AIC analysis yielded a better fitting model, confirming our visual assessemnt.  The simple model accounted for 34% of the variability in mpg, but a best fit model including additional regressors accounts for 84% of the mpg variability. Having checked residuals for influential outliers, we found 3 data points with a high degree of leverage that could skew the results due to a small data set; a larger data set would be preferable! Nonetheless, an ANOVA test confirmed that our two models are statistically different enough to merit choosing the multiple regression model. Apparently, transmission type is not as significant a factor in determining mpg when other factors like # cylinders, horsepower and weight are taken into account. Finally, we must take note that in adding regressors to our model, the variance of inflation did increase, but is worth the increase in R squared values. 
+
+## Appendix
+####Model Selection
+The following code displays the AIC method of finding the best fit model from all the data provided. Best fitting model will be that with the lowest AIC score (last model with AIC=61.65)
+```{r,eval=FALSE}
+allmodel <- lm(mpg ~ .,data=mtcars)
+idealmodel <- step(allmodel, direction = "both")  ##Select best model
+```
